@@ -17,6 +17,7 @@ cc_defaults {
         "librenderengine_deps",
         "libtimestats_deps",
         "surfaceflinger_defaults",
+        "surfaceflinger_udfps_lib_defaults",
     ],
     cflags: [
         "-DLOG_TAG=\"CompositionEngine\"",
@@ -85,6 +86,7 @@ filegroup {
         "src/OutputLayer.cpp",
         "src/OutputLayerCompositionState.cpp",
         "src/RenderSurface.cpp",
+        "src/UdfpsExtension.cpp",
     ],
 }
 
@@ -98,6 +100,14 @@ cc_library {
         ":libcompositionengine_sources",
     ],
     local_include_dirs: ["include"],
+    export_include_dirs: ["include"],
+}
+
+cc_library_static {
+    name: "surfaceflinger_udfps_lib",
+    srcs: [
+        "src/UdfpsExtension.cpp",
+    ],
     export_include_dirs: ["include"],
 }
 
