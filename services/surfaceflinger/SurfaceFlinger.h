@@ -1251,7 +1251,6 @@ private:
 
     bool mLayerCachingEnabled = false;
     bool mBackpressureGpuComposition = false;
-    bool mPropagateBackpressure = true;
 
     LayerTracing mLayerTracing;
     bool mLayerTracingEnabled = false;
