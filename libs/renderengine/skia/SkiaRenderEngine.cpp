@@ -397,12 +397,10 @@ void SkiaRenderEngine::mapExternalTextureBuffer(const sp<GraphicBuffer>& buffer,
     }
     // We don't attempt to map a buffer if the buffer contains protected content. In GL this is
     // important because GPU resources for protected buffers are much more limited. (In Vk we
-    // simply match the existing behavior for protected buffers.)  In Vk, we never cache any
-    // buffers while in a protected context, since Vk cannot share across contexts, and protected
-    // is less common.
+    // simply match the existing behavior for protected buffers.)  We also never cache any
+    // buffers while in a protected context.
     const bool isProtectedBuffer = buffer->getUsage() & GRALLOC_USAGE_PROTECTED;
-    if (isProtectedBuffer ||
-        (mRenderEngineType == RenderEngineType::SKIA_VK_THREADED && isProtected())) {
+    if (isProtectedBuffer || isProtected()) {
         return;
     }
     ATRACE_CALL();
@@ -467,9 +465,8 @@ void SkiaRenderEngine::unmapExternalTextureBuffer(sp<GraphicBuffer>&& buffer) {
 
 std::shared_ptr<AutoBackendTexture::LocalRef> SkiaRenderEngine::getOrCreateBackendTexture(
         const sp<GraphicBuffer>& buffer, bool isOutputBuffer) {
-    // Do not lookup the buffer in the cache for protected contexts with the SkiaVk back-end
-    if (mRenderEngineType == RenderEngineType::SKIA_GL_THREADED ||
-        (mRenderEngineType == RenderEngineType::SKIA_VK_THREADED && !isProtected())) {
+    // Do not lookup the buffer in the cache for protected contexts
+    if (!isProtected()) {
         if (const auto& it = mTextureCache.find(buffer->getId()); it != mTextureCache.end()) {
             return it->second;
         }
@@ -510,7 +507,8 @@ sk_sp<SkShader> SkiaRenderEngine::createRuntimeEffectShader(
         auto effect =
                 shaders::LinearEffect{.inputDataspace = parameters.layer.sourceDataspace,
                                       .outputDataspace = parameters.outputDataSpace,
-                                      .undoPremultipliedAlpha = parameters.undoPremultipliedAlpha};
+                                      .undoPremultipliedAlpha = parameters.undoPremultipliedAlpha,
+                                      .fakeOutputDataspace = parameters.fakeOutputDataspace};
 
         auto effectIter = mRuntimeEffects.find(effect);
         sk_sp<SkRuntimeEffect> runtimeEffect = nullptr;
@@ -901,12 +899,14 @@ void SkiaRenderEngine::drawLayersInternal(
                 (display.outputDataspace & ui::Dataspace::TRANSFER_MASK) ==
                         static_cast<int32_t>(ui::Dataspace::TRANSFER_SRGB);
 
-        const ui::Dataspace runtimeEffectDataspace = !dimInLinearSpace && isExtendedHdr
+        const bool useFakeOutputDataspaceForRuntimeEffect = !dimInLinearSpace && isExtendedHdr;
+
+        const ui::Dataspace fakeDataspace = useFakeOutputDataspaceForRuntimeEffect
                 ? static_cast<ui::Dataspace>(
                           (display.outputDataspace & ui::Dataspace::STANDARD_MASK) |
                           ui::Dataspace::TRANSFER_GAMMA2_2 |
                           (display.outputDataspace & ui::Dataspace::RANGE_MASK))
-                : display.outputDataspace;
+                : ui::Dataspace::UNKNOWN;
 
         // If the input dataspace is range extended, the output dataspace transfer is sRGB
         // and dimmingStage is GAMMA_OETF, dim in linear space instead, and
@@ -1013,7 +1013,8 @@ void SkiaRenderEngine::drawLayersInternal(
                                                   .layerDimmingRatio = dimInLinearSpace
                                                           ? layerDimmingRatio
                                                           : 1.f,
-                                                  .outputDataSpace = runtimeEffectDataspace}));
+                                                  .outputDataSpace = display.outputDataspace,
+                                                  .fakeOutputDataspace = fakeDataspace}));
 
             // Turn on dithering when dimming beyond this (arbitrary) threshold...
             static constexpr float kDimmingThreshold = 0.2f;
@@ -1077,7 +1078,8 @@ void SkiaRenderEngine::drawLayersInternal(
                                                   .undoPremultipliedAlpha = false,
                                                   .requiresLinearEffect = requiresLinearEffect,
                                                   .layerDimmingRatio = layerDimmingRatio,
-                                                  .outputDataSpace = runtimeEffectDataspace}));
+                                                  .outputDataSpace = display.outputDataspace,
+                                                  .fakeOutputDataspace = fakeDataspace}));
         }
 
         if (layer.disableBlending) {
