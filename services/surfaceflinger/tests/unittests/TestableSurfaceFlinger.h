@@ -1079,8 +1079,8 @@ public:
                 if (mFlinger.scheduler() && mRegisterDisplay) {
                     mFlinger.scheduler()->registerDisplay(physicalId,
                                                           display->holdRefreshRateSelector(),
-                                                          std::move(controller),
-                                                          std::move(tracker));
+                                                          std::move(controller), std::move(tracker),
+                                                          mFlinger.mutableActiveDisplayId());
                 }
 
                 display->setActiveMode(activeModeId, fps, fps);

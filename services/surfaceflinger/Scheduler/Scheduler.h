@@ -101,9 +101,16 @@ public:
     using ConstVsyncSchedulePtr = std::shared_ptr<const VsyncSchedule>;
     using VsyncSchedulePtr = std::shared_ptr<VsyncSchedule>;
 
-    void registerDisplay(PhysicalDisplayId, RefreshRateSelectorPtr) REQUIRES(kMainThreadContext)
+    // After registration/unregistration, `activeDisplayId` is promoted to pacesetter. Note that the
+    // active display is never unregistered, since hotplug disconnect never happens for activatable
+    // displays, i.e. a foldable's internal displays or otherwise the (internal or external) primary
+    // display.
+    // TODO: b/255635821 - Remove active display parameters.
+    void registerDisplay(PhysicalDisplayId, RefreshRateSelectorPtr,
+                         PhysicalDisplayId activeDisplayId) REQUIRES(kMainThreadContext)
             EXCLUDES(mDisplayLock);
-    void unregisterDisplay(PhysicalDisplayId) REQUIRES(kMainThreadContext) EXCLUDES(mDisplayLock);
+    void unregisterDisplay(PhysicalDisplayId, PhysicalDisplayId activeDisplayId)
+            REQUIRES(kMainThreadContext) EXCLUDES(mDisplayLock);
 
     void run();
 
@@ -388,8 +395,9 @@ private:
     // the caller on the main thread to avoid deadlock, since the timer thread locks it before exit.
     void demotePacesetterDisplay() REQUIRES(kMainThreadContext) EXCLUDES(mDisplayLock, mPolicyLock);
 
-    void registerDisplayInternal(PhysicalDisplayId, RefreshRateSelectorPtr, VsyncSchedulePtr)
-            REQUIRES(kMainThreadContext) EXCLUDES(mDisplayLock);
+    void registerDisplayInternal(PhysicalDisplayId, RefreshRateSelectorPtr, VsyncSchedulePtr,
+                                 PhysicalDisplayId activeDisplayId) REQUIRES(kMainThreadContext)
+            EXCLUDES(mDisplayLock);
 
     struct Policy;
 
@@ -401,6 +409,11 @@ private:
     struct DisplayModeChoice {
         DisplayModeChoice(FrameRateMode mode, GlobalSignals consideredSignals)
               : mode(std::move(mode)), consideredSignals(consideredSignals) {}
+
+        static DisplayModeChoice from(RefreshRateSelector::RankedFrameRates rankedFrameRates) {
+            return {rankedFrameRates.ranking.front().frameRateMode,
+                    rankedFrameRates.consideredSignals};
+        }
 
         FrameRateMode mode;
         GlobalSignals consideredSignals;
@@ -437,6 +450,7 @@ private:
 
     // IEventThreadCallback overrides
     bool throttleVsync(TimePoint, uid_t) override;
+    // Get frame interval
     Period getVsyncPeriod(uid_t) override EXCLUDES(mDisplayLock);
     void resync() override EXCLUDES(mDisplayLock);
     void onExpectedPresentTimePosted(TimePoint expectedPresentTime) override EXCLUDES(mDisplayLock);
